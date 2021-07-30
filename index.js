@@ -4,6 +4,7 @@ require('dotenv').config()
 const mongoose = require('mongoose')
 const app = express()
 const bodyParser = require('body-parser')
+const { analogies } = require('./analogies.js')
 // app.use(cors())
 const Room = require('./models/Room.js')
 const User = require('./models/User.js')
@@ -31,15 +32,46 @@ mongoose.connect(process.env.ROOM, { useNewUrlParser: true, useUnifiedTopology: 
         .catch(error => console.log(error.message))
 
 
+
+
 // MODERATOR REQUESTS TO CREATE ROOM
 app.post('/createRoom', async (req, res) => {
     var { name, players } = req.body
-    name += new Date().toLocaleTimeString()    
-    await Room.save({name, playing: players})
+    var rounds = players
+    await Room.save({name, playing: players, rounds})
     return res.status(200).send({ roomName: name })
 })
 
+
+
 app.get('/game', (req, res) => {
+
+
+io.on('gamemessage', ( {room, message} )=> {
+
+    var room = Room.find({name: room})
+    
+if (room && room.assigned==0){
+    // Server generating a message
+    var spy = Math.floor(Math.random()*room.playing)
+    var level = room.playing - room.rounds
+    room.rounds--
+    // var sids = []
+
+    for ( var j=0; j<room.playing; j++ ) {
+        if (j==spy) {
+            io.to(room.players[spy]).emit('spymessage', { text: `You're the spy!` })
+        }
+        else io.to(room.players[j]).emit(`gamemessage`, { analogy: analogies[level][0].stmt })    
+    }
+} else {
+    var guess = message
+
+}
+    // io.sockets.in(sids).emit();
+})  
+
+
 io.on('connect', (socket) => {
     
     socket.on('join', async ({ email, roomname }) => {
@@ -70,7 +102,7 @@ io.on('connect', (socket) => {
                 if (room.players.length==room.playing) {
                     room.dummy.clear();
                     // Expecting client side socket to respond to gamemessages event etc.
-                    socket.emit('gamemessage', { user: 'server', text: `play`});
+                    socket.emit('gamemessage', { user: 'server', text: `play`});                    
                 } else {
                     socket.emit('servermessage', { user: `server`, text: `Waiting for others to join` } )
                 }
@@ -106,6 +138,7 @@ io.on('connect', (socket) => {
                     // USER WAS PLAYING THE GAME
                     delete user[tempId]
                     room.players.splice(id, 1)
+                    room.playing--
                     user.last = room.scores[id]
                     room.scores.splice(id, 1)
                     room.dummy.push(user.email)
@@ -131,4 +164,4 @@ io.on('connect', (socket) => {
 });
 })
 
-server.listen(PORT, () => console.log(`Server has started.`));
+// server.listen(PORT, () => console.log(`Server has started.`));
