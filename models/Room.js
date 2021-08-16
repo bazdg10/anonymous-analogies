@@ -8,8 +8,8 @@ const roomSchema = Schema({
     dummy: { type: [String] },      // stores player's email    // Data retrieval 
     scores: {type: [Number]},
     players: {type: [String]},      // stores player's socket-id 
-    analogies: {type: [String]},
-    assigned: { type: Number, default: 0 }
+    analogy: {type: Number},       // stores index of last analogy   
+    assigned: { type: String }  // stores last assigned player
 })
 const Room = mongoose.model('room', roomSchema)
 module.exports = Room

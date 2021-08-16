@@ -47,29 +47,35 @@ app.post('/createRoom', async (req, res) => {
 app.get('/game', (req, res) => {
 
 
-io.on('gamemessage', ( {room, message} )=> {
+// io.on('gamemessage', ( {room, message} )=> {
 
-    var room = Room.find({name: room})
+//     var room = Room.find({name: room})
     
-if (room && room.assigned==0){
-    // Server generating a message
-    var spy = Math.floor(Math.random()*room.playing)
-    var level = room.playing - room.rounds
-    room.rounds--
-    // var sids = []
+// if (room && room.assigned==0){
+//     // Server generating a message
+//     var spy = Math.floor(Math.random()*room.playing)
+//     var level = room.playing - room.rounds
+//     room.rounds--;
+//     // var sids = []
+//     for ( var j=0; j<room.playing; j++ ) {
+//         if (j==spy) {
+//             io.to(room.players[spy]).emit('spymessage', { text: `You're the spy!` })
+//         }
+//         else 
+//             io.to(room.players[j]).emit(`gamemessage`, { analogy: analogies[level][0].stmt })    
+//     }
+// } else {
+//     var guess = message
 
-    for ( var j=0; j<room.playing; j++ ) {
-        if (j==spy) {
-            io.to(room.players[spy]).emit('spymessage', { text: `You're the spy!` })
-        }
-        else io.to(room.players[j]).emit(`gamemessage`, { analogy: analogies[level][0].stmt })    
-    }
-} else {
-    var guess = message
+// }
+//     // io.sockets.in(sids).emit();
+// })  
 
+var generator = (room) => {
+    var j = Math.floor(Math.random()*room.playing);
+    var idx = Math.floor(Math.random()*len(analogies[9-room.rounds]));
+    return [j, idx];
 }
-    // io.sockets.in(sids).emit();
-})  
 
 
 io.on('connect', (socket) => {
@@ -89,42 +95,61 @@ io.on('connect', (socket) => {
         else
         {
             if (room) {
+                // user.room = roomname;
+                // User.findByIdAndUpdate(user._id, user);
                 // GAME NOT STARTED
             if (room.game==0) {
-                room.dummy.push(email)
-                room.players.push(socket.id)
-                room.scores.push(0)
-                user.score = 0
-                user.lastScore = 0
-                user.room = roomname
-                User.save(user)
+                room.dummy.push(email);
+                room.players.push(socket.id);
+                room.scores.push(0);
+                user.score = 0;
+                user.lastScore = 0;
+                user.room = roomname;
+                User.save(user);
                 // I can start game if everyone has joined the game
-                if (room.players.length==room.playing) {
-                    room.dummy.clear();
-                    // Expecting client side socket to respond to gamemessages event etc.
-                    socket.emit('gamemessage', { user: 'server', text: `play`});                    
+                if (room.players.length==room.playing) {    
+                    a = [];
+                    a = generator(room);
+                    j = a[0]; idx = a[1];
+                    room.analogy = idx;
+                    room.assigned = j;
+                    Room.findByIdAndUpdate(room._id, room);
+                    for ( var k=0; k<len(room.players); k++ ) {
+                        if (k==j) continue;
+                        io.to(room.players[k]).emit('gamemessage', { user: `server`, text: `${analogies[idx].stmt}` });
+                    }
+
                 } else {
-                    socket.emit('servermessage', { user: `server`, text: `Waiting for others to join` } )
+                    socket.emit('servermessage', { user: `server`, text: `Waiting for others to join` });
                 }
             } else {
                // GAME IS ALREADY GOING ON 
-               if (room.dummy.indexOf(email)!=-1) {
+               if (room.dummy.indexOf(email)!==-1) {
                 // USER GOT LOGGED OUT DUE TO SOME REASON
                 room.players.push(socket.id)    
                 room.scores.push(user.lastScore)
                 room.dummy.splice(room.dummy.indexOf(email), 1)
-                user.room = roomname                
+                room.dummy.push(email);
+                user.room = roomname          
+                Room.save(room)
+                User.save(user)      
                 }  else {
                     // RANDOM PERSON WALKED INTO AN ON-GOING GAME
                     socket.emit('servermessage', { user: `server`, text: `Sorry game has started` } )
                 }
             }
-        Room.save(room)
-        User.save(user)
+
         } else {
             socket.emit('servermessage', { user: 'server', text: ` Room doesn't exist `});
         } 
         } 
+    })
+
+    socket.on('game', async (reply) => {
+
+        /// GAME LOGIC TO BE IMPLEMENTED
+
+
     })
 
     socket.on('disconnect', async () => {
