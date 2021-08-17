@@ -38,7 +38,7 @@ mongoose.connect(process.env.ROOM, { useNewUrlParser: true, useUnifiedTopology: 
 app.post('/createRoom', async (req, res) => {
     var { name, players } = req.body
     var rounds = players
-    await Room.save({name, playing: players, rounds})
+    await Room.save({name, rounds})
     return res.status(200).send({ roomName: name })
 })
 
@@ -73,7 +73,7 @@ app.get('/game', (req, res) => {
 
 var generator = (room) => {
     var j = Math.floor(Math.random()*room.playing);
-    var idx = Math.floor(Math.random()*len(analogies[9-room.rounds]));
+    var idx = Math.floor(Math.random()*analogies[9-room.rounds].length);
     return [j, idx];
 }
 
@@ -108,17 +108,18 @@ io.on('connect', (socket) => {
                 User.save(user);
                 // I can start game if everyone has joined the game
                 if (room.players.length==room.playing) {    
-                    a = [];
+                    room.game = 1;
+                    var a = [];
                     a = generator(room);
                     j = a[0]; idx = a[1];
                     room.analogy = idx;
                     room.assigned = j;
                     Room.findByIdAndUpdate(room._id, room);
-                    for ( var k=0; k<len(room.players); k++ ) {
+                    for ( var k=0; k<room.players.length; k++ ) {
                         if (k==j) continue;
                         io.to(room.players[k]).emit('gamemessage', { user: `server`, text: `${analogies[idx].stmt}` });
                     }
-
+                    
                 } else {
                     socket.emit('servermessage', { user: `server`, text: `Waiting for others to join` });
                 }
@@ -145,9 +146,55 @@ io.on('connect', (socket) => {
         } 
     })
 
-    socket.on('game', async (reply) => {
+    socket.on('gamemessage', async (reply) => {
+        var user = await User.find({tempId: socket.id});
+        if (user!==undefined) {
+            var room = Room.find({ name: user.room });
+            if (room!==undefined) {
+                if (reply.word) {
+                    // guess is the statement
+                    if ( reply.word == room.assigned ) {
+                        room.score[room.players.indexOf(reply.word)] += 2;
+                        room.votes.push(1);
+                    } else {
+                        room.votes.push(0);
+                    }
+                    if (room.votes.length==room.dummy.length) {
+                        // ALL Players have responded                            
+                        room.rounds--;
+                        var sc = 0;
+                        for ( var i=0; i<room.votes.length; i++ ) {
+                            sc += room.votes[i];
+                        }
+                        if (sc*2 < room.score) {
+                            room.score[room.players.indexOf(reply.word)] += 2;
+                        }
 
+                        // GENERATING NEW ANALOGY
+                        var a = [];
+                        a = generator(room);
+                        j = a[0]; idx = a[1];
+                        room.analogy = idx;
+                        room.assigned = j;
+                        Room.findByIdAndUpdate(room._id, room);
+                        for ( var k=0; k<room.players.length; k++ ) {
+                            if (k==j) continue;
+                            io.to(room.players[k]).emit('gamemessage', { user: `server`, text: `${analogies[idx].stmt}` });
+                        }
+                    }
+                Room.findByIdAndUpdate(room._id, room);
+                
+                } else if (reply.stmt) {
+                    // The impostor sends stmt
+                    room.responses.push(reply.stmt);
+                    Room.findByIdAndUpdate(room._id, room);
+                    if ( room.responses.length == room.dummy.length )
+                        socket.emit('gamemessage', { user: `server`, responses : `${room.responses}` });
+                }
+            }
+        } 
         /// GAME LOGIC TO BE IMPLEMENTED
+        
 
 
     })
@@ -158,20 +205,19 @@ io.on('connect', (socket) => {
             var roomname = user.room;
             var room = await Room.find({ name: roomname })
             if (room) {
-                var id = room.players.indexOf(socket.id)
-                if (id!=-1) {
+                var id = room.dummy.indexOf(socket.id)
+                if (id!==-1) {
                     // USER WAS PLAYING THE GAME
-                    delete user[tempId]
+                    user.tempId = "";
                     room.players.splice(id, 1)
                     room.playing--
                     user.last = room.scores[id]
                     room.scores.splice(id, 1)
-                    room.dummy.push(user.email)
-                    if ( room.players.length==0 ) {
+                    if ( room.dummy.length==0 ) {
                         // GAME HAS ENDED
                         for ( var i=0; i<room.dummy.length; i++ ) {
 
-                            var user = await User.find({email: room.dummy[i]})
+                            var usr = await User.find({email: room.players[i]})
                             // Updating User's actual score
                             user.score += user.lastScore
                             user.lastScore = 0
@@ -179,7 +225,7 @@ io.on('connect', (socket) => {
                         }
                         await Room.deleteOne({_id: room._id})
                     } else {
-                        await Room.save(room)
+                        await Room.save(room);
                     }
                 } 
             }
